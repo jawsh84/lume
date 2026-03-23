@@ -208,10 +208,21 @@
     font-size: 15px;
   }
 
+  #sidebar-close { display: none; }
+
   /* ---- Mobile ---- */
   @media (max-width: 768px) {
     #sidebar { display: none; }
     #sidebar.open { display: flex; position: fixed; z-index: 10; height: 100vh; }
+    #sidebar.open #sidebar-close {
+      display: inline;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 16px;
+      cursor: pointer;
+      margin-left: auto;
+    }
     #editor-wrap { padding: 16px; }
   }
 
@@ -247,7 +258,7 @@
 <body>
 
 <div id="sidebar" class="collapsed">
-  <div id="sidebar-header"><span class="logo">&#9998;</span> Lume</div>
+  <div id="sidebar-header"><span class="logo">&#9998;</span> Lume <button id="sidebar-close" onclick="toggleSidebar()">&#10005;</button></div>
   <div id="breadcrumb"></div>
   <div id="file-list"></div>
   <div id="sidebar-footer">
@@ -310,6 +321,7 @@ const {
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
   if (window.innerWidth <= 768) {
+    sidebar.classList.remove('collapsed');
     sidebar.classList.toggle('open');
   } else {
     sidebar.classList.toggle('collapsed');
@@ -510,7 +522,10 @@ async function loadDir(path) {
     if (entry.path === currentPath) div.classList.add('active');
     const icon = entry.is_dir ? '&#128193;' : '&#128196;';
     div.innerHTML = `<span class="icon">${icon}</span> ${entry.name}`;
-    div.onclick = () => entry.is_dir ? loadDir(entry.path) : openFile(entry.path);
+    div.onclick = () => {
+      if (entry.is_dir) { loadDir(entry.path); }
+      else { openFile(entry.path); if (window.innerWidth <= 768) toggleSidebar(); }
+    };
     list.appendChild(div);
   });
 }
