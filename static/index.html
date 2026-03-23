@@ -15,8 +15,28 @@
     --border: #e7e5e4;
     --text: #1c1917;
     --text-muted: #78716c;
-    --accent: #2563eb;
-    --accent-hover: #1d4ed8;
+    --accent: #2b6cb0;
+    --accent-hover: #1e5a94;
+    --file-entry-hover: #e7e5e4;
+    --code-bg: #f0efe9;
+    --pre-bg: #1e1e1e;
+    --pre-text: #d4d4d4;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1917;
+      --sidebar-bg: #1a1816;
+      --border: #3a3530;
+      --text: #e7e5e4;
+      --text-muted: #a8a29e;
+      --accent: #5b9bd5;
+      --accent-hover: #7db4e8;
+      --file-entry-hover: #2a2622;
+      --code-bg: #2a2622;
+      --pre-bg: #131110;
+      --pre-text: #d4d4d4;
+    }
   }
 
   body {
@@ -86,8 +106,8 @@
     transition: background 0.1s;
   }
 
-  .file-entry:hover { background: #e7e5e4; }
-  .file-entry.active { border-left-color: var(--accent); background: #e7e5e4; }
+  .file-entry:hover { background: var(--file-entry-hover); }
+  .file-entry.active { border-left-color: var(--accent); background: var(--file-entry-hover); }
   .file-entry .icon { opacity: 0.5; font-size: 13px; }
 
   /* ---- Main ---- */
@@ -155,8 +175,8 @@
     margin: 0.5em 0;
   }
   #editor pre {
-    background: #1e1e1e;
-    color: #d4d4d4;
+    background: var(--pre-bg);
+    color: var(--pre-text);
     padding: 16px;
     border-radius: 8px;
     overflow-x: auto;
@@ -164,7 +184,7 @@
     margin: 0.8em 0;
   }
   #editor code {
-    background: #f0efe9;
+    background: var(--code-bg);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.9em;
