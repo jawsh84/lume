@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9998;</text></svg>">
 <title>Lume</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -16,8 +17,6 @@
     --text-muted: #78716c;
     --accent: #2563eb;
     --accent-hover: #1d4ed8;
-    --save-bg: #16a34a;
-    --save-hover: #15803d;
   }
 
   body {
@@ -104,39 +103,28 @@
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    gap: 12px;
     background: white;
+    position: relative;
   }
 
   #file-path {
-    flex: 1;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
     font-size: 13px;
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    pointer-events: auto;
   }
 
   #status {
     font-size: 12px;
     color: var(--text-muted);
     white-space: nowrap;
+    margin-left: auto;
   }
-
-  #save-btn {
-    padding: 6px 18px;
-    background: var(--save-bg);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  #save-btn:hover { background: var(--save-hover); }
-  #save-btn:disabled { opacity: 0.5; cursor: default; }
 
   #editor-wrap {
     flex: 1;
@@ -205,12 +193,10 @@
   @media (max-width: 768px) {
     #sidebar { display: none; }
     #sidebar.open { display: flex; position: fixed; z-index: 10; height: 100vh; }
-    #menu-btn { display: block !important; }
     #editor-wrap { padding: 16px; }
   }
 
   #menu-btn {
-    display: none;
     background: none;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -218,22 +204,23 @@
     cursor: pointer;
     font-size: 16px;
   }
+
+  #sidebar.collapsed { display: none; }
 </style>
 </head>
 <body>
 
-<div id="sidebar">
-  <div id="sidebar-header"><span class="logo">&#9672;</span> Lume</div>
+<div id="sidebar" class="collapsed">
+  <div id="sidebar-header"><span class="logo">&#9998;</span> Lume</div>
   <div id="breadcrumb"></div>
   <div id="file-list"></div>
 </div>
 
 <div id="main">
   <div id="toolbar">
-    <button id="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+    <button id="menu-btn" onclick="toggleSidebar()">&#9776;</button>
     <span id="file-path">No file open</span>
     <span id="status"></span>
-    <button id="save-btn" disabled onclick="save()">Save</button>
   </div>
   <div id="editor-wrap">
     <div id="empty-state">Select a file from the sidebar to begin editing</div>
@@ -261,6 +248,17 @@ const {
   listenerCtx,
 } = window.Milkdown;
 
+// ---- Sidebar toggle ----
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  if (window.innerWidth <= 768) {
+    sidebar.classList.toggle('open');
+  } else {
+    sidebar.classList.toggle('collapsed');
+  }
+}
+window.toggleSidebar = toggleSidebar;
+
 // ---- State ----
 let currentPath = null;
 let editor = null;
@@ -271,7 +269,13 @@ let dirty = false;
 function setStatus(msg) { document.getElementById('status').textContent = msg; }
 function setDirty(v) {
   dirty = v;
-  document.getElementById('save-btn').disabled = !v;
+}
+
+// ---- Auto-save ----
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => window.save(), 1500);
 }
 
 // ---- Editor ----
@@ -291,6 +295,7 @@ async function createEditor(markdown) {
       ctx.get(listenerCtx).markdownUpdated((_, md) => {
         if (ignoreNextUpdate) { ignoreNextUpdate = false; return; }
         setDirty(true);
+        scheduleAutoSave();
       });
     })
     .use(commonmark)
@@ -317,8 +322,10 @@ async function openFile(path) {
   if (data.error) { alert(data.error); return; }
 
   currentPath = data.path;
-  document.getElementById('file-path').textContent = currentPath;
-  document.title = `Lume — ${currentPath.split('/').pop()}`;
+  const filePathEl = document.getElementById('file-path');
+  filePathEl.textContent = currentPath.split('/').pop();
+  filePathEl.title = currentPath;
+  document.title = currentPath.split('/').pop();
 
   // Update URL
   window.history.replaceState(null, '', '/edit?path=' + encodeURIComponent(currentPath));
@@ -333,9 +340,9 @@ async function openFile(path) {
 }
 
 window.save = async function() {
+  clearTimeout(autoSaveTimer);
   if (!currentPath || !dirty) return;
   const md = getMarkdown();
-  document.getElementById('save-btn').disabled = true;
   setStatus('Saving...');
   const res = await fetch('/api/write', {
     method: 'POST',
