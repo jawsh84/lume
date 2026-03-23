@@ -275,17 +275,21 @@ function setDirty(v) {
 }
 
 // ---- Editor ----
+let ignoreNextUpdate = false;
+
 async function createEditor(markdown) {
   const el = document.getElementById('editor');
   el.style.display = '';
   el.innerHTML = '';
   document.getElementById('empty-state').style.display = 'none';
 
+  ignoreNextUpdate = true;
   editor = await Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, el);
       ctx.set(defaultValueCtx, markdown);
       ctx.get(listenerCtx).markdownUpdated((_, md) => {
+        if (ignoreNextUpdate) { ignoreNextUpdate = false; return; }
         setDirty(true);
       });
     })

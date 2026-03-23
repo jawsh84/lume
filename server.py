@@ -48,11 +48,21 @@ class ChangeHandler(FileSystemEventHandler):
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self.loop = loop
 
+    def _handle(self, path):
+        resolved = str(Path(path).resolve())
+        asyncio.run_coroutine_threadsafe(manager.notify(resolved), self.loop)
+
     def on_modified(self, event):
-        if event.is_directory:
-            return
-        path = str(Path(event.src_path).resolve())
-        asyncio.run_coroutine_threadsafe(manager.notify(path), self.loop)
+        if not event.is_directory:
+            self._handle(event.src_path)
+
+    def on_moved(self, event):
+        if not event.is_directory:
+            self._handle(event.dest_path)
+
+    def on_created(self, event):
+        if not event.is_directory:
+            self._handle(event.src_path)
 
 observer = Observer()
 
@@ -60,8 +70,10 @@ observer = Observer()
 async def start_watcher():
     loop = asyncio.get_event_loop()
     handler = ChangeHandler(loop)
-    # Watch home directory broadly; watchdog is efficient with inotify/kqueue
-    observer.schedule(handler, str(Path.home()), recursive=True)
+    # Watch the default kb directory
+    kb_dir = str(DEFAULT_ROOT)
+    if Path(kb_dir).is_dir():
+        observer.schedule(handler, kb_dir, recursive=True)
     observer.start()
 
 @app.on_event("shutdown")
