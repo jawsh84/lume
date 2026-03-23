@@ -1,6 +1,6 @@
 # Lume
 
-A lightweight, agent-friendly markdown editor. Opens any `.md` file on your system in a beautiful WYSIWYG editor, with live-reload when external processes (like AI agents) modify the file on disk.
+A beautiful, lightweight markdown editor with dark mode. Opens any `.md` file on your system in a clean WYSIWYG editor, with live-reload when external processes (like AI agents) modify the file on disk.
 
 ## Features
 
