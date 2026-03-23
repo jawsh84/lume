@@ -173,6 +173,7 @@
   .ProseMirror { white-space: pre-wrap; outline: none; min-height: 100%; }
   .ProseMirror::after { content: ''; display: block; height: 40px; }
   #editor a { color: var(--accent); }
+  #editor.mod-held a { cursor: pointer; text-decoration: underline; }
   #editor hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
   #editor img { max-width: 100%; border-radius: 8px; }
   #editor table { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
@@ -200,6 +201,7 @@
     background: none;
     border: 1px solid var(--border);
     border-radius: 6px;
+    color: var(--text-muted);
     padding: 4px 8px;
     cursor: pointer;
     font-size: 16px;
@@ -306,6 +308,24 @@ async function createEditor(markdown) {
 
   setDirty(false);
 }
+
+const editorEl = document.getElementById('editor');
+
+editorEl.addEventListener('click', (e) => {
+  if (!(e.metaKey || e.ctrlKey)) return;
+  const a = e.target.closest('a');
+  if (!a) return;
+  e.preventDefault();
+  window.open(a.href, '_blank', 'noopener');
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Meta' || e.key === 'Control') editorEl.classList.add('mod-held');
+});
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'Meta' || e.key === 'Control') editorEl.classList.remove('mod-held');
+});
+window.addEventListener('blur', () => editorEl.classList.remove('mod-held'));
 
 function getMarkdown() {
   if (!editor) return '';
