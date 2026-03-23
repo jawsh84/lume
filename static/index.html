@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9998;</text></svg>">
 <title>Lume</title>
 <style>
@@ -118,6 +118,7 @@
 
   #toolbar {
     padding: 8px 16px;
+    padding-top: max(8px, env(safe-area-inset-top));
     display: flex;
     align-items: center;
     background: var(--bg);
@@ -234,6 +235,8 @@
     padding: 4px 8px;
     cursor: pointer;
     font-size: 16px;
+    position: relative;
+    z-index: 1;
   }
 
   #sidebar-footer {
@@ -334,6 +337,7 @@ let currentPath = null;
 let editor = null;
 let ws = null;
 let dirty = false;
+let skipNextReload = false;
 
 // ---- Helpers ----
 function setStatus(msg) { document.getElementById('status').textContent = msg; }
@@ -440,6 +444,7 @@ window.save = async function() {
   const data = await res.json();
   if (data.ok) {
     setDirty(false);
+    skipNextReload = true;
     setStatus('Saved');
     setTimeout(() => setStatus(''), 2000);
   } else {
@@ -462,22 +467,55 @@ document.addEventListener('keydown', (e) => {
 // ---- WebSocket for live reload ----
 function connectWS(path) {
   if (ws) ws.close();
+  let reconnectDelay = 1000;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws?path=${encodeURIComponent(path)}`);
-  ws.onmessage = async (e) => {
-    const msg = JSON.parse(e.data);
-    if (msg.type === 'reload' && msg.path === currentPath && !dirty) {
-      setStatus('Reloading...');
-      const res = await fetch('/api/read?' + new URLSearchParams({ path: currentPath }));
-      const data = await res.json();
-      if (!data.error) {
+
+  function connect() {
+    ws = new WebSocket(`${proto}://${location.host}/ws?path=${encodeURIComponent(path)}`);
+
+    ws.onopen = () => { reconnectDelay = 1000; };
+
+    ws.onmessage = async (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'reload' && msg.path === currentPath) {
+        if (skipNextReload) { skipNextReload = false; return; }
+        if (dirty) return;
+        setStatus('Reloading...');
+        const res = await fetch('/api/read?' + new URLSearchParams({ path: currentPath }));
+        const data = await res.json();
+        if (!data.error) {
+          await createEditor(data.content);
+          setStatus('Updated from disk');
+          setTimeout(() => setStatus(''), 2000);
+        }
+      }
+    };
+
+    ws.onclose = () => {
+      if (path === currentPath) {
+        setTimeout(() => { if (path === currentPath) connect(); }, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+      }
+    };
+  }
+
+  connect();
+}
+
+document.addEventListener('visibilitychange', async () => {
+  if (!document.hidden && currentPath && !dirty) {
+    const res = await fetch('/api/read?' + new URLSearchParams({ path: currentPath }));
+    const data = await res.json();
+    if (!data.error) {
+      const current = getMarkdown();
+      if (data.content !== current) {
         await createEditor(data.content);
         setStatus('Updated from disk');
         setTimeout(() => setStatus(''), 2000);
       }
     }
-  };
-}
+  }
+});
 
 // ---- Sidebar / file browser ----
 async function loadDir(path) {
