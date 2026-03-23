@@ -7,7 +7,9 @@ A lightweight, agent-friendly markdown editor. Opens any `.md` file on your syst
 - **WYSIWYG editing** — Milkdown (ProseMirror-based) with CommonMark + GFM support
 - **Live reload** — WebSocket-powered; if an external process writes to the file, the editor updates automatically
 - **File browser** — sidebar for navigating directories (default root: `~/kb/`)
-- **Save** — button or Cmd/Ctrl+S writes back to disk
+- **Dark mode** — follows OS preference, with manual toggle in the sidebar
+- **Clickable links** — Cmd/Ctrl+click to open hyperlinks in a new tab
+- **Keyboard shortcuts** — Cmd/Ctrl+S to save, Cmd/Ctrl+B to toggle sidebar
 - **Mobile-friendly** — responsive layout with collapsible sidebar
 - **Minimal** — no database, no auth, no build step to run
 

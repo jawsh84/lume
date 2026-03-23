@@ -23,20 +23,18 @@
     --pre-text: #d4d4d4;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #292c33;
-      --sidebar-bg: #242730;
-      --border: #3e4250;
-      --text: #eaeaea;
-      --text-muted: #c5c8c6;
-      --accent: #88a1bb;
-      --accent-hover: #83a5d6;
-      --file-entry-hover: #33363f;
-      --code-bg: #33363f;
-      --pre-bg: #1d1f21;
-      --pre-text: #c5c8c6;
-    }
+  html.dark {
+    --bg: #292c33;
+    --sidebar-bg: #242730;
+    --border: #3e4250;
+    --text: #eaeaea;
+    --text-muted: #c5c8c6;
+    --accent: #88a1bb;
+    --accent-hover: #83a5d6;
+    --file-entry-hover: #33363f;
+    --code-bg: #33363f;
+    --pre-bg: #1d1f21;
+    --pre-text: #c5c8c6;
   }
 
   body {
@@ -227,6 +225,22 @@
     font-size: 16px;
   }
 
+  #sidebar-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  #theme-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 13px;
+    width: 100%;
+  }
+
   #sidebar.collapsed { display: none; }
 </style>
 </head>
@@ -236,6 +250,9 @@
   <div id="sidebar-header"><span class="logo">&#9998;</span> Lume</div>
   <div id="breadcrumb"></div>
   <div id="file-list"></div>
+  <div id="sidebar-footer">
+    <button id="theme-toggle" onclick="toggleTheme()"></button>
+  </div>
 </div>
 
 <div id="main">
@@ -249,6 +266,25 @@
     <div id="editor" style="display:none"></div>
   </div>
 </div>
+
+<!-- Theme toggle (runs before render to avoid flash) -->
+<script>
+function getTheme() {
+  return localStorage.getItem('theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+}
+function applyTheme(theme) {
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = theme === 'dark' ? '☼ Light' : '☽ Dark';
+}
+function toggleTheme() {
+  const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
+}
+applyTheme(getTheme());
+</script>
 
 <!-- Milkdown (local bundle) -->
 <script src="/editor.bundle.js" type="module"></script>
@@ -404,6 +440,10 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
     window.save();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+    e.preventDefault();
+    toggleSidebar();
   }
 });
 
