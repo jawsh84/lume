@@ -100,10 +100,9 @@
 
   #toolbar {
     padding: 8px 16px;
-    border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    background: white;
+    background: var(--bg);
     position: relative;
   }
 
@@ -171,7 +170,8 @@
     font-size: 0.9em;
   }
   #editor pre code { background: none; padding: 0; }
-  .ProseMirror { white-space: pre-wrap; outline: none; }
+  .ProseMirror { white-space: pre-wrap; outline: none; min-height: 100%; }
+  .ProseMirror::after { content: ''; display: block; height: 40px; }
   #editor a { color: var(--accent); }
   #editor hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
   #editor img { max-width: 100%; border-radius: 8px; }
