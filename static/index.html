@@ -214,15 +214,26 @@
   /* ---- Mobile ---- */
   @media (max-width: 768px) {
     #sidebar { display: none; }
-    #sidebar.open { display: flex; position: fixed; z-index: 10; height: 100vh; }
+    #sidebar.open {
+      display: flex;
+      position: fixed;
+      z-index: 10;
+      top: 0;
+      left: 0;
+      width: 100vw !important;
+      height: 100dvh;
+      min-width: 100vw !important;
+      border-right: none;
+    }
     #sidebar.open #sidebar-close {
       display: inline;
       background: none;
       border: none;
       color: var(--text-muted);
-      font-size: 16px;
+      font-size: 18px;
       cursor: pointer;
       margin-left: auto;
+      padding: 4px;
     }
     #editor-wrap { padding: 16px; }
   }
