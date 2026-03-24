@@ -167,6 +167,24 @@ async def list_dir(path: str = Query(None)):
     return JSONResponse({"entries": entries, "path": str(root)})
 
 
+@app.get("/api/browse")
+async def browse_dirs(path: str = Query(None)):
+    """List only directories — used by the folder picker in settings."""
+    root = Path(path).resolve() if path else Path.home()
+    if not root.is_dir():
+        return JSONResponse({"error": "Not a directory"}, status_code=400)
+    entries = []
+    try:
+        for item in sorted(root.iterdir()):
+            if item.name.startswith("."):
+                continue
+            if item.is_dir():
+                entries.append({"name": item.name, "path": str(item)})
+    except PermissionError:
+        pass
+    return JSONResponse({"entries": entries, "path": str(root)})
+
+
 # ---------------------------------------------------------------------------
 # Config API
 # ---------------------------------------------------------------------------

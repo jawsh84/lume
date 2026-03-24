@@ -358,31 +358,79 @@
   }
   .folder-item.just-added { animation: folder-added 0.6s ease-out; }
 
-  #add-folder-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-  }
-
-  #add-folder-input {
-    flex: 1;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
-    font-size: 14px;
-    font-family: inherit;
-  }
-
-  #add-folder-btn {
+  #browse-btn {
+    width: 100%;
     padding: 8px 16px;
-    background: var(--accent);
-    color: white;
-    border: none;
+    background: none;
+    color: var(--accent);
+    border: 1px dashed var(--border);
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
+    margin-top: 8px;
+  }
+
+  #browse-btn:hover { border-color: var(--accent); }
+
+  #folder-browser {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 12px;
+    overflow: hidden;
+  }
+
+  #browser-header {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--sidebar-bg);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+  }
+
+  #browser-list {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .browser-entry {
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .browser-entry:hover { background: var(--file-entry-hover); }
+  .browser-entry .icon { opacity: 0.5; font-size: 12px; }
+
+  #browser-actions {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    justify-content: flex-end;
+  }
+
+  #browser-actions button {
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--text);
+  }
+
+  #browser-actions .select-btn {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
   }
 
   #settings-btn {
@@ -433,9 +481,14 @@
       <h3 style="font-size:1em;margin-bottom:4px">Knowledge Base Folders</h3>
       <p class="settings-hint">Add folders containing your markdown files.</p>
       <div id="folder-list"></div>
-      <div id="add-folder-row">
-        <input id="add-folder-input" type="text" placeholder="/path/to/folder">
-        <button id="add-folder-btn" onclick="addFolder()">Add</button>
+      <button id="browse-btn" onclick="openBrowser()">+ Add Folder</button>
+      <div id="folder-browser" style="display:none">
+        <div id="browser-header"><span id="browser-path"></span></div>
+        <div id="browser-list"></div>
+        <div id="browser-actions">
+          <button onclick="cancelBrowser()">Cancel</button>
+          <button class="select-btn" onclick="selectCurrentFolder()">Select This Folder</button>
+        </div>
       </div>
     </div>
   </div>
@@ -492,29 +545,6 @@ function closeSettings() {
   if (window._reloadSidebar) window._reloadSidebar();
 }
 
-async function addFolder() {
-  const input = document.getElementById('add-folder-input');
-  const path = input.value.trim();
-  if (!path) return;
-  const btn = document.getElementById('add-folder-btn');
-  btn.textContent = 'Adding...';
-  btn.disabled = true;
-  try {
-    const res = await fetch('/api/config/folders/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: path }),
-    });
-    const data = await res.json();
-    if (data.error) { alert(data.error); return; }
-    input.value = '';
-    await loadFolderList(true);
-  } finally {
-    btn.textContent = 'Add';
-    btn.disabled = false;
-  }
-}
-
 async function removeFolder(path) {
   if (!confirm('Remove "' + path + '" from your knowledge base?')) return;
   const res = await fetch('/api/config/folders/remove', {
@@ -527,14 +557,72 @@ async function removeFolder(path) {
   await loadFolderList();
 }
 
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && document.getElementById('settings-overlay').style.display !== 'none') {
-    closeSettings();
-  }
-});
+// ---- Folder browser ----
+var _browserPath = null;
 
-document.getElementById('add-folder-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') addFolder();
+function openBrowser() {
+  document.getElementById('folder-browser').style.display = '';
+  document.getElementById('browse-btn').style.display = 'none';
+  loadBrowserDir();
+}
+
+function cancelBrowser() {
+  document.getElementById('folder-browser').style.display = 'none';
+  document.getElementById('browse-btn').style.display = '';
+}
+
+async function loadBrowserDir(path) {
+  var params = path ? '?path=' + encodeURIComponent(path) : '';
+  var res = await fetch('/api/browse' + params);
+  var data = await res.json();
+  if (data.error) return;
+  _browserPath = data.path;
+  document.getElementById('browser-path').textContent = data.path;
+
+  var list = document.getElementById('browser-list');
+  list.innerHTML = '';
+
+  // Parent directory
+  var parts = data.path.split('/').filter(Boolean);
+  if (parts.length > 0) {
+    var parent = '/' + parts.slice(0, -1).join('/');
+    var up = document.createElement('div');
+    up.className = 'browser-entry';
+    up.innerHTML = '<span class="icon">..</span>';
+    up.onclick = function() { loadBrowserDir(parent || '/'); };
+    list.appendChild(up);
+  }
+
+  data.entries.forEach(function(entry) {
+    var div = document.createElement('div');
+    div.className = 'browser-entry';
+    div.innerHTML = '<span class="icon">&#128193;</span> ' + entry.name;
+    div.onclick = function() { loadBrowserDir(entry.path); };
+    list.appendChild(div);
+  });
+}
+
+async function selectCurrentFolder() {
+  if (!_browserPath) return;
+  var res = await fetch('/api/config/folders/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: _browserPath }),
+  });
+  var data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  cancelBrowser();
+  await loadFolderList(true);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    if (document.getElementById('folder-browser').style.display !== 'none') {
+      cancelBrowser();
+    } else if (document.getElementById('settings-overlay').style.display !== 'none') {
+      closeSettings();
+    }
+  }
 });
 </script>
 
