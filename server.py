@@ -1,6 +1,7 @@
 """Lume — a lightweight, agent-friendly markdown editor."""
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -16,6 +17,26 @@ app = FastAPI()
 # Config
 # ---------------------------------------------------------------------------
 DEFAULT_ROOT = Path.home() / "kb"
+CONFIG_DIR = Path.home() / ".lume"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+
+
+def load_config() -> dict:
+    """Read config from disk; create default if missing."""
+    if CONFIG_FILE.is_file():
+        try:
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    # Default config
+    config = {"folders": [str(DEFAULT_ROOT)]}
+    save_config(config)
+    return config
+
+
+def save_config(config: dict) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 # ---------------------------------------------------------------------------
 # WebSocket manager — tracks which clients watch which files
@@ -65,16 +86,33 @@ class ChangeHandler(FileSystemEventHandler):
             self._handle(event.src_path)
 
 observer = Observer()
+_watched: dict[str, object] = {}  # path -> ObservedWatch handle
+
+
+async def restart_watchers():
+    """Re-read config and update filesystem watches."""
+    global _watched
+    loop = asyncio.get_event_loop()
+    handler = ChangeHandler(loop)
+    # Remove old watches
+    for watch in _watched.values():
+        try:
+            observer.unschedule(watch)
+        except Exception:
+            pass
+    _watched.clear()
+    # Add watches for all configured folders
+    for folder in load_config()["folders"]:
+        p = Path(folder)
+        if p.is_dir():
+            _watched[str(p)] = observer.schedule(handler, str(p), recursive=True)
+
 
 @app.on_event("startup")
 async def start_watcher():
-    loop = asyncio.get_event_loop()
-    handler = ChangeHandler(loop)
-    # Watch the default kb directory
-    kb_dir = str(DEFAULT_ROOT)
-    if Path(kb_dir).is_dir():
-        observer.schedule(handler, kb_dir, recursive=True)
     observer.start()
+    await restart_watchers()
+
 
 @app.on_event("shutdown")
 async def stop_watcher():
@@ -102,7 +140,16 @@ async def write_file(body: dict):
 
 @app.get("/api/ls")
 async def list_dir(path: str = Query(None)):
-    root = Path(path).resolve() if path else DEFAULT_ROOT
+    if path is None:
+        # Virtual root: list all configured folders
+        entries = []
+        for f in load_config()["folders"]:
+            p = Path(f)
+            if p.is_dir():
+                entries.append({"name": p.name, "path": str(p), "is_dir": True})
+        return JSONResponse({"entries": entries, "path": "/", "is_virtual_root": True})
+
+    root = Path(path).resolve()
     if not root.is_dir():
         return JSONResponse({"error": "Not a directory"}, status_code=400)
     entries = []
@@ -118,6 +165,50 @@ async def list_dir(path: str = Query(None)):
     except PermissionError:
         pass
     return JSONResponse({"entries": entries, "path": str(root)})
+
+
+# ---------------------------------------------------------------------------
+# Config API
+# ---------------------------------------------------------------------------
+@app.get("/api/config")
+async def get_config():
+    config = load_config()
+    folders = []
+    for f in config["folders"]:
+        p = Path(f)
+        folders.append({"path": str(p), "exists": p.is_dir(), "name": p.name})
+    return JSONResponse({"folders": folders})
+
+
+@app.post("/api/config/folders/add")
+async def add_folder(body: dict):
+    folder = Path(body["path"]).resolve()
+    if not folder.is_dir():
+        return JSONResponse({"error": "Path is not a directory"}, status_code=400)
+    config = load_config()
+    existing = [str(Path(f).resolve()) for f in config["folders"]]
+    if str(folder) in existing:
+        return JSONResponse({"error": "Folder already added"}, status_code=409)
+    config["folders"].append(str(folder))
+    save_config(config)
+    await restart_watchers()
+    return JSONResponse({"ok": True, "folders": config["folders"]})
+
+
+@app.post("/api/config/folders/remove")
+async def remove_folder(body: dict):
+    folder = str(Path(body["path"]).resolve())
+    config = load_config()
+    resolved = [str(Path(f).resolve()) for f in config["folders"]]
+    if folder not in resolved:
+        return JSONResponse({"error": "Folder not found"}, status_code=404)
+    if len(resolved) <= 1:
+        return JSONResponse({"error": "Cannot remove the last folder"}, status_code=400)
+    idx = resolved.index(folder)
+    config["folders"].pop(idx)
+    save_config(config)
+    await restart_watchers()
+    return JSONResponse({"ok": True, "folders": config["folders"]})
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +232,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 @app.get("/edit")
 async def edit_page():
+    return HTMLResponse((STATIC_DIR / "index.html").read_text())
+
+@app.get("/settings")
+async def settings_page():
     return HTMLResponse((STATIC_DIR / "index.html").read_text())
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
