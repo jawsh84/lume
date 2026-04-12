@@ -3,6 +3,8 @@
 import asyncio
 import json
 import os
+import re
+import urllib.parse
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
@@ -165,6 +167,59 @@ async def list_dir(path: str = Query(None)):
     except PermissionError:
         pass
     return JSONResponse({"entries": entries, "path": str(root)})
+
+
+_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*:", re.I)
+
+
+def _is_inside(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+@app.get("/api/resolve")
+async def resolve_link(href: str = Query(...), from_: str = Query(..., alias="from")):
+    """Resolve a markdown link's href (relative or root-relative) against the
+    configured roots. Returns the absolute path of the target file, or 404."""
+    if not href or href.startswith("#") or _SCHEME_RE.match(href):
+        return JSONResponse({"error": "not internal"}, status_code=404)
+
+    # Strip query/fragment and percent-decode
+    cleaned = urllib.parse.unquote(href.split("#", 1)[0].split("?", 1)[0])
+    if not cleaned:
+        return JSONResponse({"error": "empty"}, status_code=404)
+
+    roots = [Path(f).resolve() for f in load_config()["folders"] if Path(f).is_dir()]
+    if not roots:
+        return JSONResponse({"error": "no roots configured"}, status_code=404)
+
+    from_path = Path(from_).resolve()
+
+    if cleaned.startswith("/"):
+        # Root-relative: anchor against the root that contains the current file
+        containing = next((r for r in roots if _is_inside(from_path, r)), None)
+        if containing is None:
+            return JSONResponse({"error": "current file not in any root"}, status_code=404)
+        base = containing / cleaned.lstrip("/")
+    else:
+        base = from_path.parent / cleaned
+
+    candidates = [base, Path(str(base) + ".md"), base / "index.md"]
+    for cand in candidates:
+        try:
+            resolved = cand.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if not resolved.is_file():
+            continue
+        if not any(_is_inside(resolved, r) for r in roots):
+            continue
+        return JSONResponse({"path": str(resolved)})
+
+    return JSONResponse({"error": "not found or outside roots"}, status_code=404)
 
 
 @app.get("/api/browse")

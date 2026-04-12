@@ -709,12 +709,41 @@ async function createEditor(markdown) {
 
 const editorEl = document.getElementById('editor');
 
-editorEl.addEventListener('click', (e) => {
-  if (!(e.metaKey || e.ctrlKey)) return;
+const SCHEME_RE = /^[a-z][a-z0-9+.\-]*:/i;
+
+editorEl.addEventListener('click', async (e) => {
   const a = e.target.closest('a');
   if (!a) return;
+  const raw = a.getAttribute('href');
+  if (!raw) return;
+  // Anchor: let the browser handle in-page scroll
+  if (raw.startsWith('#')) return;
+  // External: let the browser handle (plain click follows link, cmd+click opens new tab)
+  if (SCHEME_RE.test(raw)) return;
+
+  // Internal candidate — take over from the browser
   e.preventDefault();
-  window.open(a.href, '_blank', 'noopener');
+  if (!currentPath) return;
+
+  let resolved;
+  try {
+    const res = await fetch('/api/resolve?' + new URLSearchParams({ href: raw, from: currentPath }));
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.warn('Lume: could not resolve link', raw, data.error || res.status);
+      return;
+    }
+    resolved = (await res.json()).path;
+  } catch (err) {
+    console.warn('Lume: resolve error', raw, err);
+    return;
+  }
+
+  if (e.metaKey || e.ctrlKey) {
+    window.open('/edit?path=' + encodeURIComponent(resolved), '_blank', 'noopener');
+  } else {
+    openFile(resolved);
+  }
 });
 
 document.addEventListener('keydown', (e) => {
@@ -734,7 +763,8 @@ function getMarkdown() {
 }
 
 // ---- File operations ----
-async function openFile(path) {
+// history: 'push' (default, new nav), 'replace' (initial load), 'none' (popstate)
+async function openFile(path, { history = 'push' } = {}) {
   const res = await fetch('/api/read?' + new URLSearchParams({ path }));
   const data = await res.json();
   if (data.error) { alert(data.error); return; }
@@ -745,8 +775,12 @@ async function openFile(path) {
   filePathEl.title = currentPath;
   document.title = currentPath.split('/').pop();
 
-  // Update URL
-  window.history.replaceState(null, '', '/edit?path=' + encodeURIComponent(currentPath));
+  const url = '/edit?path=' + encodeURIComponent(currentPath);
+  if (history === 'push') {
+    window.history.pushState({ path: currentPath }, '', url);
+  } else if (history === 'replace') {
+    window.history.replaceState({ path: currentPath }, '', url);
+  }
 
   await createEditor(data.content);
   connectWS(currentPath);
@@ -756,6 +790,11 @@ async function openFile(path) {
     e.classList.toggle('active', e.dataset.path === currentPath);
   });
 }
+
+window.addEventListener('popstate', (e) => {
+  const path = e.state?.path;
+  if (path) openFile(path, { history: 'none' });
+});
 
 window.save = async function() {
   clearTimeout(autoSaveTimer);
@@ -944,7 +983,7 @@ if (params.get('path')) {
   const filePath = params.get('path');
   const parentDir = filePath.substring(0, filePath.lastIndexOf('/'));
   loadDir(parentDir);
-  openFile(filePath);
+  openFile(filePath, { history: 'replace' });
 } else {
   loadDir();
 }
