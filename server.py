@@ -40,6 +40,74 @@ def save_config(config: dict) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
+
+# ---------------------------------------------------------------------------
+# Path policy (2026-10-03 audit)
+#
+# Every file endpoint used to accept ANY absolute path. Combined with the
+# server listening on 0.0.0.0 and having no auth, that was unauthenticated
+# read/write of the whole home directory from the LAN and the tailnet. Auth
+# now lives in Caddy (basic_auth on lume.home.arpa) and uvicorn binds to
+# 127.0.0.1 — but even an authenticated user is confined to the configured
+# folders. Folders themselves must live under $HOME and may never be a
+# credential directory.
+# ---------------------------------------------------------------------------
+HOME = Path.home().resolve()
+# Always-allowed roots in addition to whatever is in config.json.
+BUILTIN_ROOTS = [HOME / "kb", HOME / "Programming" / "Projects" / "naomi"]
+# Never allowed as a configured folder (or as an ancestor of one).
+FORBIDDEN_DIRS = [HOME / ".ssh", HOME / ".config", HOME / ".claude", HOME / ".lume",
+                  HOME / "Library", HOME / ".gnupg"]
+
+
+def _is_inside(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def allowed_roots() -> list[Path]:
+    roots = []
+    for f in load_config()["folders"]:
+        try:
+            p = Path(f).resolve()
+        except (OSError, RuntimeError):
+            continue
+        if p.is_dir() and folder_permitted(p):
+            roots.append(p)
+    for b in BUILTIN_ROOTS:
+        if b.is_dir() and b.resolve() not in roots:
+            roots.append(b.resolve())
+    return roots
+
+
+def folder_permitted(folder: Path) -> bool:
+    """A configurable folder must live inside one of BUILTIN_ROOTS.
+
+    Josh's decision (2026-10-03 audit): Lume edits ~/kb and the naomi repo,
+    nothing else. Anything under $HOME was still too wide — it would have let
+    an authenticated-but-compromised browser session read ~/Documents or
+    ~/Programming/Projects/*. FORBIDDEN_DIRS stays as a second fence.
+    """
+    folder = folder.resolve()
+    if not any(_is_inside(folder, root.resolve()) for root in BUILTIN_ROOTS if root.is_dir()):
+        return False
+    return not any(_is_inside(folder, bad) for bad in FORBIDDEN_DIRS)
+
+
+def path_allowed(p: Path) -> bool:
+    try:
+        p = p.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return any(_is_inside(p, r) for r in allowed_roots())
+
+
+def forbidden(what: str = "path") -> JSONResponse:
+    return JSONResponse({"error": f"{what} outside configured folders"}, status_code=403)
+
 # ---------------------------------------------------------------------------
 # WebSocket manager — tracks which clients watch which files
 # ---------------------------------------------------------------------------
@@ -127,6 +195,8 @@ async def stop_watcher():
 @app.get("/api/read")
 async def read_file(path: str = Query(...)):
     p = Path(path).resolve()
+    if not path_allowed(p):
+        return forbidden()
     if not p.is_file():
         return JSONResponse({"error": "File not found"}, status_code=404)
     return JSONResponse({"content": p.read_text(encoding="utf-8"), "path": str(p)})
@@ -135,6 +205,8 @@ async def read_file(path: str = Query(...)):
 @app.post("/api/write")
 async def write_file(body: dict):
     p = Path(body["path"]).resolve()
+    if not path_allowed(p):
+        return forbidden()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body["content"], encoding="utf-8")
     return JSONResponse({"ok": True, "path": str(p)})
@@ -152,6 +224,8 @@ async def list_dir(path: str = Query(None)):
         return JSONResponse({"entries": entries, "path": "/", "is_virtual_root": True})
 
     root = Path(path).resolve()
+    if not path_allowed(root):
+        return forbidden("directory")
     if not root.is_dir():
         return JSONResponse({"error": "Not a directory"}, status_code=400)
     entries = []
@@ -172,14 +246,6 @@ async def list_dir(path: str = Query(None)):
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*:", re.I)
 
 
-def _is_inside(child: Path, parent: Path) -> bool:
-    try:
-        child.relative_to(parent)
-        return True
-    except ValueError:
-        return False
-
-
 @app.get("/api/resolve")
 async def resolve_link(href: str = Query(...), from_: str = Query(..., alias="from")):
     """Resolve a markdown link's href (relative or root-relative) against the
@@ -192,7 +258,7 @@ async def resolve_link(href: str = Query(...), from_: str = Query(..., alias="fr
     if not cleaned:
         return JSONResponse({"error": "empty"}, status_code=404)
 
-    roots = [Path(f).resolve() for f in load_config()["folders"] if Path(f).is_dir()]
+    roots = allowed_roots()
     if not roots:
         return JSONResponse({"error": "no roots configured"}, status_code=404)
 
@@ -224,8 +290,12 @@ async def resolve_link(href: str = Query(...), from_: str = Query(..., alias="fr
 
 @app.get("/api/browse")
 async def browse_dirs(path: str = Query(None)):
-    """List only directories — used by the folder picker in settings."""
-    root = Path(path).resolve() if path else Path.home()
+    """List only directories — used by the folder picker in settings.
+    Browsing is confined to $HOME (minus credential dirs) so the picker can
+    only ever offer folders that folder_permitted() would accept."""
+    root = Path(path).resolve() if path else HOME
+    if root != HOME and not folder_permitted(root):
+        return forbidden("directory")
     if not root.is_dir():
         return JSONResponse({"error": "Not a directory"}, status_code=400)
     entries = []
@@ -233,7 +303,7 @@ async def browse_dirs(path: str = Query(None)):
         for item in sorted(root.iterdir()):
             if item.name.startswith("."):
                 continue
-            if item.is_dir():
+            if item.is_dir() and folder_permitted(item):
                 entries.append({"name": item.name, "path": str(item)})
     except PermissionError:
         pass
@@ -258,6 +328,8 @@ async def add_folder(body: dict):
     folder = Path(body["path"]).resolve()
     if not folder.is_dir():
         return JSONResponse({"error": "Path is not a directory"}, status_code=400)
+    if not folder_permitted(folder):
+        return JSONResponse({"error": "Folder must be under your home directory and not a credential directory"}, status_code=403)
     config = load_config()
     existing = [str(Path(f).resolve()) for f in config["folders"]]
     if str(folder) in existing:
@@ -289,6 +361,9 @@ async def remove_folder(body: dict):
 # ---------------------------------------------------------------------------
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket, path: str = Query(...)):
+    if not path_allowed(Path(path)):
+        await ws.close(code=1008)  # policy violation
+        return
     resolved = str(Path(path).resolve())
     await manager.connect(ws, resolved)
     try:

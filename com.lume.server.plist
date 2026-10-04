@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.lume.server</string>
+  <key>UserName</key>
+  <string>josh</string>
+  <!-- 2026-10-03: bound to loopback. The only way in is Caddy at
+       http(s)://lume.home.arpa, which carries basic_auth. Access log off:
+       Uptime Kuma's 60 s health checks were 200k lines of GET / in lume.log. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/josh/Programming/Projects/lume/.venv/bin/uvicorn</string>
+    <string>server:app</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>8080</string>
+    <string>--no-access-log</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/josh/Programming/Projects/lume</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/josh/.claude/tools/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/josh</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/josh/Programming/Projects/naomi/logs/lume.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/josh/Programming/Projects/naomi/logs/lume-error.log</string>
+</dict>
+</plist>
